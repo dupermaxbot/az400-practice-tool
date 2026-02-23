@@ -29,3 +29,10 @@ env/
 *.sqlite3
 .DS_Store
 *.swp
+
+# Environment & Security
+.env
+.env.local
+.env.*.local
+cert.pem
+key.pem
