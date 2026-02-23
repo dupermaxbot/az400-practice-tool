@@ -1,0 +1,434 @@
+{% extends "base.html" %}
+
+{% block title %}AZ-400 Practice Tool - Home{% endblock %}
+
+{% block extra_css %}
+<style>
+    .quiz-interface {
+        display: none;
+    }
+    
+    .question-card {
+        background: #f8f9fa;
+        padding: 30px;
+        border-radius: 8px;
+        margin: 20px 0;
+    }
+    
+    .question-number {
+        color: #667eea;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+    
+    .question-text {
+        color: #333;
+        font-size: 1.1em;
+        margin-bottom: 20px;
+        line-height: 1.6;
+    }
+    
+    .scenario-text {
+        background: #e8eaf6;
+        padding: 15px;
+        border-left: 4px solid #667eea;
+        margin-bottom: 20px;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9em;
+        overflow-x: auto;
+    }
+    
+    .options {
+        margin: 20px 0;
+    }
+    
+    .option {
+        background: white;
+        border: 2px solid #ddd;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .option:hover {
+        border-color: #667eea;
+        background: #f0f2ff;
+    }
+    
+    .option.selected {
+        border-color: #667eea;
+        background: #f0f2ff;
+    }
+    
+    .option.correct {
+        border-color: #28a745;
+        background: #d4edda;
+    }
+    
+    .option.incorrect {
+        border-color: #dc3545;
+        background: #f8d7da;
+    }
+    
+    .option-label {
+        font-weight: bold;
+        margin-right: 10px;
+    }
+    
+    .feedback {
+        margin-top: 20px;
+        padding: 15px;
+        border-radius: 6px;
+        display: none;
+    }
+    
+    .feedback.correct {
+        background: #d4edda;
+        border: 1px solid #28a745;
+        color: #155724;
+        display: block;
+    }
+    
+    .feedback.incorrect {
+        background: #f8d7da;
+        border: 1px solid #dc3545;
+        color: #721c24;
+        display: block;
+    }
+    
+    .explanation {
+        margin-top: 10px;
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.05);
+        border-radius: 4px;
+        font-size: 0.95em;
+    }
+    
+    .quiz-progress {
+        background: #e8eaf6;
+        height: 8px;
+        border-radius: 4px;
+        margin: 20px 0;
+        overflow: hidden;
+    }
+    
+    .quiz-progress-bar {
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        height: 100%;
+        transition: width 0.3s;
+    }
+    
+    .quiz-controls {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin-top: 30px;
+    }
+    
+    .submit-btn {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    }
+    
+    .submit-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    
+    .next-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .summary {
+        display: none;
+        text-align: center;
+    }
+    
+    .summary-score {
+        font-size: 3em;
+        color: #667eea;
+        font-weight: bold;
+        margin: 30px 0;
+    }
+    
+    .summary-breakdown {
+        text-align: left;
+        margin: 20px 0;
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+    }
+    
+    .missed-questions {
+        text-align: left;
+        margin: 20px 0;
+    }
+    
+    .missed-question {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 4px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="home-view">
+    <h1>🎯 AZ-400 Practice Tool</h1>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-card-value">{{ stats.total_attempts }}</div>
+            <div class="stat-card-label">Total Attempts</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card-value">{{ "%.1f"|format(stats.accuracy) }}%</div>
+            <div class="stat-card-label">Accuracy</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card-value">{{ stats.total_correct }}</div>
+            <div class="stat-card-label">Correct Answers</div>
+        </div>
+    </div>
+    
+    {% if stats.by_domain %}
+    <h2>📊 Accuracy by Domain</h2>
+    <div class="domain-stats">
+        {% for domain in stats.by_domain %}
+        <div class="domain-row">
+            <div class="domain-name">{{ domain.domain }}</div>
+            <div class="domain-score">{{ domain.correct }}/{{ domain.total }} ({{ "%.0f"|format(domain.correct / domain.total * 100) }}%)</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    
+    <div class="button-group">
+        <button onclick="startQuiz(25)">Start 25 Question Test</button>
+        <button onclick="startQuiz(15)">Quick 15 Question Test</button>
+    </div>
+</div>
+
+<div id="quiz-view" class="quiz-interface">
+    <div class="quiz-progress">
+        <div class="quiz-progress-bar" id="progress-bar" style="width: 0%"></div>
+    </div>
+    
+    <div id="quiz-content">
+        <!-- Questions will be rendered here -->
+    </div>
+    
+    <div class="quiz-controls" id="quiz-controls">
+        <button class="submit-btn" id="submit-btn" onclick="submitAnswer()" disabled>Submit Answer</button>
+        <button class="next-btn" id="next-btn" onclick="nextQuestion()" style="display: none;">Next Question</button>
+    </div>
+</div>
+
+<div id="summary-view" class="quiz-interface summary">
+    <h2>Quiz Complete!</h2>
+    <div class="summary-score" id="final-score"></div>
+    <div class="summary-breakdown" id="summary-breakdown"></div>
+    <div class="missed-questions" id="missed-questions"></div>
+    <div class="button-group">
+        <button onclick="returnHome()">Back to Home</button>
+    </div>
+</div>
+
+<script>
+    let currentSessionId = null;
+    let currentQuestions = [];
+    let currentQuestionIndex = 0;
+    let selectedAnswer = null;
+    let answered = false;
+    
+    function startQuiz(count) {
+        fetch('/api/quiz/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ count: count })
+        })
+        .then(r => r.json())
+        .then(data => {
+            currentSessionId = data.session_id;
+            currentQuestions = data.questions;
+            currentQuestionIndex = 0;
+            selectedAnswer = null;
+            answered = false;
+            
+            document.getElementById('home-view').style.display = 'none';
+            document.getElementById('quiz-view').style.display = 'block';
+            document.getElementById('summary-view').style.display = 'none';
+            
+            renderQuestion();
+        });
+    }
+    
+    function renderQuestion() {
+        const q = currentQuestions[currentQuestionIndex];
+        const progress = (currentQuestionIndex / currentQuestions.length) * 100;
+        document.getElementById('progress-bar').style.width = progress + '%';
+        
+        let html = `
+            <div class="question-card">
+                <div class="question-number">Question ${currentQuestionIndex + 1} of ${currentQuestions.length} (${q.difficulty})</div>
+        `;
+        
+        if (q.scenario_text) {
+            html += `<div class="scenario-text">${q.scenario_text}</div>`;
+        }
+        
+        html += `<div class="question-text">${q.text}</div>`;
+        html += `<div class="options">`;
+        
+        q.answers.forEach((answer, idx) => {
+            const optionLetters = ['A', 'B', 'C', 'D'];
+            let className = 'option';
+            if (answered) {
+                if (answer.id === selectedAnswer) {
+                    className += ' selected';
+                }
+            }
+            html += `
+                <div class="${className}" onclick="selectAnswer(${answer.id}, ${idx})" data-answer-id="${answer.id}">
+                    <span class="option-label">${optionLetters[idx]}.</span>
+                    ${answer.text}
+                </div>
+            `;
+        });
+        
+        html += `</div>`;
+        html += `</div>`;
+        
+        document.getElementById('quiz-content').innerHTML = html;
+        
+        document.getElementById('submit-btn').disabled = selectedAnswer === null;
+        document.getElementById('submit-btn').style.display = answered ? 'none' : 'inline-block';
+        document.getElementById('next-btn').style.display = answered ? 'inline-block' : 'none';
+    }
+    
+    function selectAnswer(answerId, idx) {
+        if (!answered) {
+            selectedAnswer = answerId;
+            renderQuestion();
+        }
+    }
+    
+    function submitAnswer() {
+        if (selectedAnswer === null) return;
+        
+        const q = currentQuestions[currentQuestionIndex];
+        fetch('/api/quiz/submit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                session_id: currentSessionId,
+                question_id: q.id,
+                answer_id: selectedAnswer
+            })
+        })
+        .then(r => r.json())
+        .then(result => {
+            answered = true;
+            showFeedback(result);
+        });
+    }
+    
+    function showFeedback(result) {
+        const q = currentQuestions[currentQuestionIndex];
+        const qCard = document.querySelector('.question-card');
+        
+        // Update option styling
+        q.answers.forEach(answer => {
+            const optionDiv = document.querySelector(`[data-answer-id="${answer.id}"]`);
+            if (answer.id === selectedAnswer) {
+                optionDiv.classList.add(result.correct ? 'correct' : 'incorrect');
+            }
+        });
+        
+        // Add feedback
+        let feedbackHtml = `<div class="feedback ${result.correct ? 'correct' : 'incorrect'}">`;
+        feedbackHtml += result.correct ? '✓ Correct!' : '✗ Incorrect';
+        feedbackHtml += `<div class="explanation">`;
+        feedbackHtml += `<strong>Selected:</strong> ${result.selected_answer.text}<br>`;
+        if (result.selected_answer.explanation) {
+            feedbackHtml += `<em>${result.selected_answer.explanation}</em><br><br>`;
+        }
+        if (!result.correct) {
+            feedbackHtml += `<strong>Correct Answer:</strong> ${result.correct_answer.text}<br>`;
+            if (result.correct_answer.explanation) {
+                feedbackHtml += `<em>${result.correct_answer.explanation}</em><br>`;
+            }
+        }
+        if (result.question_explanation) {
+            feedbackHtml += `<br><strong>Explanation:</strong> ${result.question_explanation}`;
+        }
+        feedbackHtml += `</div></div>`;
+        
+        qCard.innerHTML += feedbackHtml;
+        renderQuestion();
+    }
+    
+    function nextQuestion() {
+        currentQuestionIndex++;
+        selectedAnswer = null;
+        answered = false;
+        
+        if (currentQuestionIndex >= currentQuestions.length) {
+            showSummary();
+        } else {
+            renderQuestion();
+        }
+    }
+    
+    function showSummary() {
+        fetch(`/api/quiz/summary/${currentSessionId}`)
+        .then(r => r.json())
+        .then(summary => {
+            document.getElementById('quiz-view').style.display = 'none';
+            document.getElementById('summary-view').style.display = 'block';
+            
+            document.getElementById('final-score').textContent = 
+                `${summary.score} / ${summary.total} (${summary.percentage.toFixed(1)}%)`;
+            
+            let breakdown = `
+                <div>
+                    <strong>Score:</strong> ${summary.score} / ${summary.total}<br>
+                    <strong>Accuracy:</strong> ${summary.percentage.toFixed(1)}%<br>
+                    <strong>Missed Questions:</strong> ${summary.missed_count}
+                </div>
+            `;
+            document.getElementById('summary-breakdown').innerHTML = breakdown;
+            
+            if (summary.missed_count > 0) {
+                let missedHtml = '<h3>Missed Questions</h3>';
+                summary.missed_questions.forEach(q => {
+                    missedHtml += `
+                        <div class="missed-question">
+                            <strong>${q[1]}</strong><br>
+                            Your answer: <em>${q[3]}</em>
+                        </div>
+                    `;
+                });
+                document.getElementById('missed-questions').innerHTML = missedHtml;
+            }
+        });
+    }
+    
+    function returnHome() {
+        document.getElementById('home-view').style.display = 'block';
+        document.getElementById('quiz-view').style.display = 'none';
+        document.getElementById('summary-view').style.display = 'none';
+        
+        // Refresh stats
+        location.reload();
+    }
+</script>
+{% endblock %}
