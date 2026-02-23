@@ -144,38 +144,42 @@ def load_questions_from_json(json_file):
     cursor = conn.cursor()
     
     for q in data['questions']:
-        # Get domain_id
-        cursor.execute('SELECT id FROM domains WHERE name = ?', (q['domain'],))
-        domain = cursor.fetchone()
-        domain_id = domain[0] if domain else None
-        
-        # Insert question
-        cursor.execute('''
-            INSERT INTO questions (scenario_text, text, explanation, question_type_id, domain_id, difficulty)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (
-            q.get('scenario_text'),
-            q['text'],
-            None,  # Will be set from answer explanations
-            1,  # multiple_choice
-            domain_id,
-            q['difficulty']
-        ))
-        
-        question_id = cursor.lastrowid
-        
-        # Insert answers
-        for i, answer in enumerate(q['answers']):
+        try:
+            # Get domain_id
+            cursor.execute('SELECT id FROM domains WHERE name = ?', (q['domain'],))
+            domain = cursor.fetchone()
+            domain_id = domain[0] if domain else None
+            
+            # Insert question
             cursor.execute('''
-                INSERT INTO answers (question_id, text, is_correct, explanation, display_order)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO questions (scenario_text, text, explanation, question_type_id, domain_id, difficulty)
+                VALUES (?, ?, ?, ?, ?, ?)
             ''', (
-                question_id,
-                answer['text'],
-                answer['is_correct'],
-                answer['explanation'],
-                i
+                q.get('scenario_text'),
+                q['text'],
+                None,  # Will be set from answer explanations
+                1,  # multiple_choice
+                domain_id,
+                q['difficulty']
             ))
+            
+            question_id = cursor.lastrowid
+            
+            # Insert answers
+            for i, answer in enumerate(q['answers']):
+                cursor.execute('''
+                    INSERT INTO answers (question_id, text, is_correct, explanation, display_order)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    question_id,
+                    answer['text'],
+                    answer['is_correct'],
+                    answer['explanation'],
+                    i
+                ))
+        except Exception as e:
+            print(f"ERROR on question {idx+1}: {e}")
+            raise
     
     conn.commit()
     conn.close()
