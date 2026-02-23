@@ -27,13 +27,41 @@ python setup.py
 
 This creates the SQLite database and loads the question bank.
 
-### 3. Run the Application
+### 3. Configure Environment (Optional)
+
+Copy the example `.env` file and customize it:
+
+```bash
+cp .env.example .env
+# Edit .env with your settings (SECRET_KEY, HOST, PORT, etc.)
+```
+
+### 4. Run the Application
+
+**Option A: Flask Development Server** (not recommended for production)
 
 ```bash
 python app.py
 ```
 
-The app will be available at `http://localhost:5000`
+**Option B: Gunicorn (Recommended)** ⭐
+
+```bash
+# Using config file (recommended)
+gunicorn -c gunicorn_config.py app:app
+
+# Or with inline options
+gunicorn -w 4 -b 0.0.0.0:5000 --certfile=cert.pem --keyfile=key.pem app:app
+```
+
+Gunicorn provides:
+- ✅ Multiple worker processes (handle more concurrent users)
+- ✅ Better error handling (doesn't crash on exceptions)
+- ✅ Built-in SSL/TLS support
+- ✅ Access logging
+- ✅ Graceful restarts
+
+The app will be available at `https://localhost:5000` (note: HTTPS)
 
 ## Database Schema
 
