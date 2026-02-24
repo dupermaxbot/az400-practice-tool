@@ -1,6 +1,10 @@
 from flask import Flask, render_template, request, jsonify, session
 import random
-from database import init_db, load_questions_from_json, get_random_questions, submit_answer, get_session_summary, get_stats
+from database import (
+    init_db, load_questions_from_json, get_random_questions, submit_answer, 
+    get_session_summary, get_stats, get_user_sessions, resume_session, 
+    complete_session, abandon_session
+)
 
 app = Flask(__name__)
 app.secret_key = 'az400-practice-secret-key'
@@ -68,8 +72,58 @@ def get_quiz_summary(session_id):
 @app.route('/api/stats', methods=['GET'])
 def get_user_stats():
     """Get user statistics."""
-    stats = get_stats(user_id=1)
+    user_id = session.get('user_id')
+    stats = get_stats(user_id=user_id)
     return jsonify(stats)
+
+@app.route('/api/sessions', methods=['GET'])
+def list_sessions():
+    """List all quiz sessions for the user."""
+    user_id = session.get('user_id')
+    sessions = get_user_sessions(user_id=user_id)
+    return jsonify({'sessions': sessions})
+
+@app.route('/api/sessions/<int:session_id>/resume', methods=['GET'])
+def resume_quiz(session_id):
+    """Get unanswered questions to resume a quiz."""
+    user_id = session.get('user_id')
+    result = resume_session(session_id, user_id=user_id)
+    
+    if not result:
+        return jsonify({'error': 'Session not found'}), 404
+    
+    # Shuffle answers
+    for q in result['remaining_questions']:
+        random.shuffle(q['answers'])
+    
+    session['current_session_id'] = session_id
+    
+    return jsonify(result)
+
+@app.route('/api/sessions/<int:session_id>/complete', methods=['POST'])
+@csrf.exempt
+def complete_quiz(session_id):
+    """Mark a quiz session as completed."""
+    user_id = session.get('user_id')
+    score = complete_session(session_id, user_id=user_id)
+    
+    return jsonify({
+        'session_id': session_id,
+        'final_score': score,
+        'status': 'completed'
+    })
+
+@app.route('/api/sessions/<int:session_id>/abandon', methods=['POST'])
+@csrf.exempt
+def abandon_quiz(session_id):
+    """Mark a quiz session as abandoned."""
+    user_id = session.get('user_id')
+    abandon_session(session_id, user_id=user_id)
+    
+    return jsonify({
+        'session_id': session_id,
+        'status': 'abandoned'
+    })
 
 @app.route('/health', methods=['GET'])
 def health():

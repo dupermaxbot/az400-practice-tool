@@ -88,9 +88,11 @@ def init_db():
         CREATE TABLE IF NOT EXISTS quiz_sessions (
             id INTEGER PRIMARY KEY,
             user_id INTEGER,
-            start_time TIMESTAMP,
+            start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             end_time TIMESTAMP,
             total_score INTEGER,
+            status TEXT DEFAULT 'in_progress',
+            num_questions INTEGER,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     ''')
@@ -191,9 +193,9 @@ def get_random_questions(count=25, user_id=1):
     
     # Create quiz session
     cursor.execute('''
-        INSERT INTO quiz_sessions (user_id, start_time)
-        VALUES (?, ?)
-    ''', (user_id, datetime.now()))
+        INSERT INTO quiz_sessions (user_id, start_time, num_questions)
+        VALUES (?, ?, ?)
+    ''', (user_id, datetime.now(), count))
     
     session_id = cursor.lastrowid
     conn.commit()
@@ -353,3 +355,190 @@ def get_stats(user_id=1):
         'accuracy': (total_correct / total_attempts * 100) if total_attempts > 0 else 0,
         'by_domain': [{'domain': row[0], 'correct': row[1], 'total': row[2]} for row in by_domain]
     }
+
+def get_user_sessions(user_id):
+    """Get all sessions for a user (both in-progress and completed)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, start_time, end_time, status, total_score, num_questions
+        FROM quiz_sessions
+        WHERE user_id = ?
+        ORDER BY start_time DESC
+    ''', (user_id,))
+    
+    sessions = cursor.fetchall()
+    conn.close()
+    
+    return [
+        {
+            'id': row[0],
+            'start_time': row[1],
+            'end_time': row[2],
+            'status': row[3],
+            'total_score': row[4],
+            'num_questions': row[5]
+        }
+        for row in sessions
+    ]
+
+def get_session_progress(session_id, user_id):
+    """Get progress for a session: which questions answered, which not."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Get session info
+    cursor.execute('''
+        SELECT num_questions FROM quiz_sessions
+        WHERE id = ? AND user_id = ?
+    ''', (session_id, user_id))
+    
+    session = cursor.fetchone()
+    if not session:
+        conn.close()
+        return None
+    
+    num_questions = session[0]
+    
+    # Get all questions in this session
+    cursor.execute('''
+        SELECT DISTINCT q.id FROM questions q
+        JOIN attempts a ON q.id = a.question_id
+        WHERE a.quiz_session_id = ?
+        ORDER BY q.id
+    ''', (session_id,))
+    
+    answered_question_ids = [row[0] for row in cursor.fetchall()]
+    
+    # Get all questions that were supposed to be in this session
+    cursor.execute('''
+        SELECT id FROM questions WHERE is_active = TRUE
+        ORDER BY RANDOM() LIMIT ?
+    ''', (num_questions,))
+    
+    all_question_ids = [row[0] for row in cursor.fetchall()]
+    
+    # Find unanswered questions
+    unanswered = [q_id for q_id in all_question_ids if q_id not in answered_question_ids]
+    
+    conn.close()
+    
+    return {
+        'session_id': session_id,
+        'num_questions': num_questions,
+        'answered_count': len(answered_question_ids),
+        'unanswered_count': len(unanswered)
+    }
+
+def resume_session(session_id, user_id):
+    """Get unanswered questions for a session to resume."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Verify session exists and belongs to user
+    cursor.execute('''
+        SELECT status, num_questions FROM quiz_sessions
+        WHERE id = ? AND user_id = ?
+    ''', (session_id, user_id))
+    
+    session = cursor.fetchone()
+    if not session:
+        conn.close()
+        return None
+    
+    status, num_questions = session
+    
+    # Get all questions that were in this session (from attempts)
+    cursor.execute('''
+        SELECT DISTINCT q.id FROM questions q
+        JOIN attempts a ON q.id = a.question_id
+        WHERE a.quiz_session_id = ?
+    ''', (session_id,))
+    
+    session_questions = set(row[0] for row in cursor.fetchall())
+    
+    # Get questions already answered in this session
+    cursor.execute('''
+        SELECT DISTINCT question_id FROM attempts
+        WHERE quiz_session_id = ?
+    ''', (session_id,))
+    
+    answered_ids = set(row[0] for row in cursor.fetchall())
+    
+    # Unanswered questions are those in the session that haven't been answered
+    unanswered_ids = session_questions - answered_ids
+    
+    questions = []
+    for q_id in unanswered_ids:
+        cursor.execute('''
+            SELECT id, scenario_text, text, explanation, difficulty
+            FROM questions WHERE id = ?
+        ''', (q_id,))
+        q = cursor.fetchone()
+        
+        if q:
+            cursor.execute('''
+                SELECT id, text FROM answers WHERE question_id = ?
+                ORDER BY display_order
+            ''', (q[0],))
+            answers = cursor.fetchall()
+            
+            questions.append({
+                'id': q[0],
+                'scenario_text': q[1],
+                'text': q[2],
+                'explanation': q[3],
+                'difficulty': q[4],
+                'answers': [{'id': a[0], 'text': a[1]} for a in answers]
+            })
+    
+    conn.close()
+    
+    return {
+        'session_id': session_id,
+        'status': status,
+        'total_questions': num_questions,
+        'answered_count': len(answered_ids),
+        'remaining_questions': questions
+    }
+
+def complete_session(session_id, user_id):
+    """Mark a session as completed and calculate final score."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Calculate score
+    cursor.execute('''
+        SELECT SUM(CASE WHEN correct = TRUE THEN 1 ELSE 0 END)
+        FROM attempts
+        WHERE quiz_session_id = ? AND user_id = ?
+    ''', (session_id, user_id))
+    
+    score = cursor.fetchone()[0] or 0
+    
+    # Update session
+    cursor.execute('''
+        UPDATE quiz_sessions
+        SET status = 'completed', end_time = ?, total_score = ?
+        WHERE id = ? AND user_id = ?
+    ''', (datetime.now(), score, session_id, user_id))
+    
+    conn.commit()
+    conn.close()
+    
+    return score
+
+def abandon_session(session_id, user_id):
+    """Mark a session as abandoned (user quit mid-quiz)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        UPDATE quiz_sessions
+        SET status = 'abandoned', end_time = ?
+        WHERE id = ? AND user_id = ?
+    ''', (datetime.now(), session_id, user_id))
+    
+    conn.commit()
+    conn.close()
